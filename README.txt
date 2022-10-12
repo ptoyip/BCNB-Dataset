@@ -1,3 +1,13 @@
+## Refer to paper "Predicting Axillary Lymph Node Metastasis in Early Breast Cancer Using Deep Learning on Primary Tumor Biopsy Slides"
+
+- [ ] test.ipynb -> playground
+- [ ] bag_loader.py -> load data
+- [ ] models.py -> CNN using vgg16, aggregate feature follow the paper, and classification 
+- [ ] TODO: need to write evaluate functions, for now, just few examples in train.py
+- [ ] trian.py -> main
+
+- [ ] crop_wsi.py
+
 Thanks for your interest in our BCNB: Early Breast Cancer Core-Needle Biopsy WSI Dataset, this dataset is firstly introduced in our paper "Predicting Axillary Lymph Node Metastasis in Early Breast Cancer Using Deep Learning on Primary Tumor Biopsy Slides".
 
 If our dataset is used in your research or helpful for you, please cite our paper. For more details about our dataset, please visit https://github.com/bupt-ai-cz/BALNMP and https://bupt-ai-cz.github.io/BCNB/
