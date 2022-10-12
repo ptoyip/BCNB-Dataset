@@ -48,15 +48,15 @@ def parser_arg():
     parser = argparse.ArgumentParser()
 
     # data set
-    parser.add_argument("--excel path", required=True)
-    parser.add_argument("--patches_path", required=True)
-    parser.add_argument("--classification_label", required=True)
-    parser.add_argument("--positive_label", required=True)
-    parser.add_argument("--bag_size", type=int, required=True)
-    parser.add_argument("--train_ratio", type=float, required=True)
+    parser.add_argument("--excel_path")
+    parser.add_argument("--patches_path")
+    parser.add_argument("--classification_label")
+    parser.add_argument("--positive_label")
+    parser.add_argument("--bag_size", type=int)
+    parser.add_argument("--train_ratio", type=float)
 
     parser.add_argument("--optimizer", choices=["Adam", "SGD"], default="SGD")
-    parser.add_argument("--epoch", type=int,required=True)
+    parser.add_argument("--epoch", type=int)
     
     args = parser.parse_args()
     return args
@@ -74,14 +74,14 @@ if __name__ == "__main__":
         args.excel_path,
         args.patches_path,
         args.classification_label,
-        args.positive_lab,
+        args.positive_label,
         args.bag_size,
     )
     
     train_patch, train_label, test_patch, test_label, train_bags, test_bags = bag_split(
         bag_wsi, args.train_ratio
     )
-
+    print(device,vars(args))
     model = MIL().to(device)
     loss_func = torch.nn.CrossEntropyLoss()
     if args.optimizer == 'SGD':
@@ -107,4 +107,5 @@ if __name__ == "__main__":
                 print(f"[{epoch + 1}, {count + 1:5d}] loss: {running_loss / 2000:.3f}")
                 running_loss = 0.0
         torch.cuda.empty_cache()
+    # save model
     torch.save(model.state_dict(),'last.pth')

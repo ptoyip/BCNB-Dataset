@@ -27,11 +27,14 @@ class FeatureAggregator(nn.Module):
             nn.LeakyReLU()
         )
         # I dont understand why the attention layer should write like this.
+        # Update: I've asked Prof Chen qifeng, he said attention just a term meaning when we doing feature selection, we
+        # will learn the wait of different features, not necessary refer to the structure in "Attention is all you need".
         self.attention = nn.Sequential(
             nn.Linear(self.pink_size, self.white_size),
             nn.Dropout(),
             nn.Tanh(),
             nn.Linear(self.white_size, 1),
+            # Will the result be same if we ignore this dropout layer?
             nn.Dropout()
             # No need another activation function as we will have softmax later in the forward part.
         )
@@ -43,6 +46,7 @@ class FeatureAggregator(nn.Module):
         a = a.T #should be N*1 -> 1*N i think???
         a = softmax(a,dim=1)
         
+        # merge the origional feat to the feat after attention
         m = mm(a , x) # 1*N x N*128 = 1*128
         return m
     
@@ -57,7 +61,7 @@ class MIL(nn.Module):
             nn.Linear(self.attention.pink_size, 64),
             nn.LeakyReLU(),
             nn.Linear(64,2),
-            # Sigmoid?
+            #TODO: Sigmoid?
         )
 
     def forward(self, bag):
