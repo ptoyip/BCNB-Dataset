@@ -92,7 +92,7 @@ if __name__ == "__main__":
     for epoch in range(args.epoch):
         running_loss = 0.0
         count = 0
-        for patch, label in train_patch:
+        for patch, label in train_bags:
             device_patch = patch.to(device)
             device_label = label.to(device)
             count += 1
@@ -109,3 +109,11 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
     # save model
     torch.save(model.state_dict(),'last.pth')
+    
+    test_pred_list = []
+    for patch, label in test_bags:
+        device_patch = patch.to(device)
+        device_label = label.to(device)
+        bag_class = model(device_patch)
+        test_pred_list.append(int(torch.argmax(bag_class).numpy()))
+    print('accuracy: {}\nauc_value: {}\nprecision: {}\nrecall: {}\nfscore: {}'.format(*five_scores(test_label,test_pred_list)))
