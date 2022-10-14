@@ -1,10 +1,12 @@
-from PIL import Image
-import torch
-from torchvision import transforms
 from glob import iglob
-from pandas import read_excel
 
-class Bag_WSI():
+import torch
+from pandas import read_excel
+from PIL import Image
+from torchvision import transforms
+
+
+class Bag_WSI:
     # Bag => WSI image cropped shuffled set
     # Instance => mixed_patches
     def __init__(
@@ -31,8 +33,8 @@ class Bag_WSI():
         print("finished generation")
         self.bag_list = list(
             [
-                *zip(self.pos_bag_list, torch.ones(len(self.pos_bag_list),1)),
-                *zip(self.neg_bag_list, torch.zeros(len(self.neg_bag_list),1)),
+                *zip(self.pos_bag_list, torch.ones(len(self.pos_bag_list), 1)),
+                *zip(self.neg_bag_list, torch.zeros(len(self.neg_bag_list), 1)),
             ]
         )
 
@@ -53,7 +55,7 @@ class Bag_WSI():
             for img_path in file_path:
                 patch_img.append(transform(Image.open(img_path)))
             unlabeled_img_list.append(torch.stack(patch_img, dim=0))
-        for patch_idx, patch in enumerate(unlabeled_img_list): # patch is tensor
+        for patch_idx, patch in enumerate(unlabeled_img_list):  # patch is tensor
             # * Check Patch Tensor Length
             if len(patch) <= self.bag_size:
                 # * Generate a bag directly, can write a function to make it look better
@@ -75,4 +77,3 @@ class Bag_WSI():
                         self.pos_bag_list.append(bag)
                     else:
                         self.neg_bag_list.append(bag)
-        
