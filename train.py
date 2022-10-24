@@ -1,12 +1,15 @@
 import argparse
 import json
-
+from random import shuffle
 import numpy as np
 import torch
-from sklearn.metrics import precision_recall_fscore_support, roc_auc_score, roc_curve
-
-from bag_loader import Bag_WSI
+from bag_data import Bag_WSI
 from models import MIL
+from sklearn.metrics import precision_recall_fscore_support, roc_auc_score, roc_curve
+import warnings
+
+
+warnings.filterwarnings("ignore")
 
 
 def load_data(excel_path, patches_path, classification_label, positive_label, bag_size):
@@ -19,14 +22,21 @@ def load_data(excel_path, patches_path, classification_label, positive_label, ba
     )
 
 
-def bag_split(bag: Bag_WSI, train_ratio):
+def bag_split(bag: Bag_WSI, train_ratio, test_ratio):
     num_bag = len(bag.bag_list)
-    train_bags, test_bags = torch.utils.data.random_split(  # type: ignore
-        bag.bag_list, [round(train_ratio * num_bag), round((1 - train_ratio) * num_bag)]
+    shuffle(bag.bag_list)
+    train_bags, val_bags, test_bags = torch.utils.data.random_split(
+        bag.bag_list,
+        [
+            round(train_ratio * num_bag),
+            num_bag - round(train_ratio * num_bag) - round((test_ratio) * num_bag),
+            round((test_ratio) * num_bag),
+        ],
     )
-    train_patch, train_label = [i[0] for i in train_bags], [i[1] for i in train_bags]
-    test_patch, test_label = [i[0] for i in test_bags], [i[1] for i in test_bags]
-    return train_patch, train_label, test_patch, test_label, train_bags, test_bags
+    # train_patch,val_patch, train_label = [i[0] for i in train_bags],[i[0] for i in val_bags], [i[1] for i in train_bags]
+    # test_patch, val_label, test_label = [i[0] for i in test_bags], [i[0] for i in val_bags],[i[1] for i in test_bags]
+    # return train_patch, train_label, test_patch, test_label, train_bags, test_bags
+    return train_bags, val_bags, test_bags
 
 
 def optimal_thresh(fpr, tpr, thresholds, p=0):
@@ -53,6 +63,8 @@ def five_scores(bag_labels, bag_predictions):
 def parser_arg():
     parser = argparse.ArgumentParser()
 
+    # GPU number
+    parser.add_argument("--gpu", type=int, required=True)
     # data set
     parser.add_argument("--excel_path")
     parser.add_argument("--patches_path")
@@ -60,6 +72,7 @@ def parser_arg():
     parser.add_argument("--positive_label")
     parser.add_argument("--bag_size", type=int)
     parser.add_argument("--train_ratio", type=float)
+    parser.add_argument("--test_ratio", type=float)
 
     parser.add_argument("--optimizer", choices=["Adam", "SGD"], default="SGD")
     parser.add_argument("--epoch", type=int)
@@ -69,12 +82,11 @@ def parser_arg():
 
 
 if __name__ == "__main__":
+    args = parser_arg()
     if torch.cuda.is_available():
-        device = torch.device("cuda")
+        device = torch.device("cuda", args.gpu)
     else:
         device = torch.device("cpu")
-
-    args = parser_arg()
 
     bag_wsi = load_data(
         args.excel_path,
@@ -84,10 +96,13 @@ if __name__ == "__main__":
         args.bag_size,
     )
 
-    train_patch, train_label, test_patch, test_label, train_bags, test_bags = bag_split(
-        bag_wsi, args.train_ratio
+    # train_patch, train_label, test_patch, test_label, train_bags, test_bags = bag_split(
+    #     bag_wsi, args.train_ratio
+    # )
+    train_bags, val_bags, test_bags = bag_split(
+        bag_wsi, args.train_ratio, args.test_ratio
     )
-    print(device, vars(args))
+    # print(device, vars(args))
     model = MIL().to(device)
     loss_func = torch.nn.CrossEntropyLoss()
     if args.optimizer == "SGD":
@@ -95,6 +110,9 @@ if __name__ == "__main__":
     else:
         optimizer = torch.optim.Adam(model.parameters())
 
+    best_acc = -1
+    best_model = None
+    best_epoch = -1
     for epoch in range(args.epoch):
         running_loss = 0.0
         count = 0
@@ -104,6 +122,7 @@ if __name__ == "__main__":
             count += 1
             optimizer.zero_grad()
             bag_class = model(device_patch)
+            print(type(bag_class),type(device_label.to(torch.long),bag_class,device_label.to(torch.long)))
             loss = loss_func(bag_class, device_label.to(torch.long))
             loss.backward()
             optimizer.step()
@@ -113,17 +132,35 @@ if __name__ == "__main__":
                 print(f"[{epoch + 1}, {count + 1:5d}] loss: {running_loss / 2000:.3f}")
                 running_loss = 0.0
         torch.cuda.empty_cache()
-    # save model
-    torch.save(model.state_dict(), "last.pth")
-
-    test_pred_list = []
-    for patch, label in test_bags:
-        device_patch = patch.to(device)
-        device_label = label.to(device)
-        bag_class = model(device_patch)
-        test_pred_list.append(int(torch.argmax(bag_class).cpu().numpy()))
-    print(
-        "accuracy: {}\nauc_value: {}\nprecision: {}\nrecall: {}\nfscore: {}".format(
-            *five_scores(test_label, test_pred_list)
+        test_pred_list = []
+        test_label_list = []
+        for patch, label in val_bags:
+            device_patch = patch.to(device)
+            device_label = label.to(device)
+            bag_class = model(device_patch)
+            test_pred_list.append(int(torch.argmax(bag_class).cpu()))
+            test_label_list.append(label.cpu().item())
+        acc, auc, precision, recall, fscore = five_scores(
+            test_label_list, test_pred_list
         )
-    )
+        if acc > best_acc:
+            best_model = model
+            best_epoch = epoch
+            best_result = (acc, auc, precision, recall, fscore)
+        else:
+            pass
+    # save model
+    print("The best epoch is:", best_epoch)
+    torch.save(best_model.state_dict(), "best.pth")
+    torch.save(model.state_dict(), "last.pth")
+    print(best_result)
+
+
+# accuracy: 0.1754098360655738
+# auc_value: 0.5
+# precision: 0.0
+# recall: 0.0
+# fscore: 0.0
+
+# The best epoch is: 9
+# (0.2063106796116505, 0.5, 0.0, 0.0, 0.0)

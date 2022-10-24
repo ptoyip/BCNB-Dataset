@@ -29,4 +29,4 @@ module add cuda
 source activate BCNB
 cd $HOME/code/BCNB\ Dataset
 
-srun -n 20 --gres=gpu:1 python train.py --excel_path patient-clinical-data.xlsx --patches_path patches --classification_label ER --positive_label Positive --bag_size 5 --train_ratio 0.8 --optimizer Adam --epoch 3
+srun -n 20 --gres=gpu:1 python train.py --excel_path patient-clinical-data.xlsx --test_ratio 0.1 --patches_path patches --classification_label ER --positive_label Positive --bag_size 30 --train_ratio 0.8 --optimizer Adam --epoch 10
