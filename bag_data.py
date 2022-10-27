@@ -56,9 +56,11 @@ class Bag_WSI(torch.utils.data.Dataset):
         else:
             pass
         self.bag_list = []
-        self.bag_list.extend(zip(self.pos_bag_list, torch.ones(len(self.pos_bag_list))))
         self.bag_list.extend(
-            zip(self.neg_bag_list, torch.zeros(len(self.neg_bag_list)))
+            zip(self.pos_bag_list, torch.ones(len(self.pos_bag_list), 1))
+        )
+        self.bag_list.extend(
+            zip(self.neg_bag_list, torch.zeros(len(self.neg_bag_list), 1))
         )
 
     def __len__(self):

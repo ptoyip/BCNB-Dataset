@@ -39,25 +39,31 @@ def bag_split(bag: Bag_WSI, train_ratio, test_ratio):
     return train_bags, val_bags, test_bags
 
 
-def optimal_thresh(fpr, tpr, thresholds, p=0):
-    loss = (fpr - tpr) - p * tpr / (fpr + tpr + 1)
-    idx = np.argmin(loss, axis=0)
-    return fpr[idx], tpr[idx], thresholds[idx]
+def compute_confusion_matrix(label_list, predicted_label_list, num_classes=2):
+    label_array = np.array(label_list, dtype=np.int64)
+    predicted_label_array = np.array(predicted_label_list, dtype=np.int64)
+    confusion_matrix = np.bincount(
+        num_classes * label_array + predicted_label_array, minlength=num_classes**2
+    ).reshape((num_classes, num_classes))
+
+    return confusion_matrix
 
 
-def five_scores(bag_labels, bag_predictions):
-    fpr, tpr, threshold = roc_curve(bag_labels, bag_predictions, pos_label=1)
-    fpr_optimal, tpr_optimal, threshold_optimal = optimal_thresh(fpr, tpr, threshold)
-    auc_value = roc_auc_score(bag_labels, bag_predictions)
-    this_class_label = np.array(bag_predictions)
-    this_class_label[this_class_label >= threshold_optimal] = 1
-    this_class_label[this_class_label < threshold_optimal] = 0
-    bag_predictions = this_class_label
-    precision, recall, fscore, _ = precision_recall_fscore_support(
-        bag_labels, bag_predictions, average="binary"
-    )
-    accuracy = 1 - np.count_nonzero(np.array(bag_labels).astype(int) - bag_predictions.astype(int)) / len(bag_labels)  # type: ignore
-    return accuracy, auc_value, precision, recall, fscore
+def compute_metrics(label_list, predicted_label_list):
+    confusion_matrix = compute_confusion_matrix(label_list, predicted_label_list)
+    tn, fp, fn, tp = confusion_matrix.flatten()
+
+    acc = (tn + tp) / (tn + fp + fn + tp)
+    sens = tp / (tp + fn)
+    spec = tn / (tn + fp)
+    ppv = tp / (tp + fp)
+    npv = tn / (tn + fn)
+
+    precision = tp / (tp + fp)
+    recall = tp / (tp + fn)
+    f1 = 2 * (precision * recall) / (precision + recall)
+
+    return acc, sens, spec, ppv, npv, f1
 
 
 def parser_arg():
@@ -108,7 +114,7 @@ if __name__ == "__main__":
     if args.optimizer == "SGD":
         optimizer = torch.optim.SGD(model.parameters(), lr=0.005)
     else:
-        optimizer = torch.optim.Adam(model.parameters())
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0005)
 
     best_acc = -1
     best_model = None
@@ -122,14 +128,23 @@ if __name__ == "__main__":
             count += 1
             optimizer.zero_grad()
             bag_class = model(device_patch)
-            print(type(bag_class),type(device_label.to(torch.long),bag_class,device_label.to(torch.long)))
+            # print(
+            #     type(bag_class),
+            #     type(device_label.to(torch.long)),
+            #     bag_class,
+            #     device_label.to(torch.long),
+            # )
             loss = loss_func(bag_class, device_label.to(torch.long))
             loss.backward()
             optimizer.step()
 
             running_loss += loss.item()
-            if count % 20 == 19:
-                print(f"[{epoch + 1}, {count + 1:5d}] loss: {running_loss / 2000:.3f}")
+            if count % 1000 == 999:
+                print(
+                    f"[{epoch + 1}, {count + 1:5d}] loss: {running_loss / 10000:.3f}",
+                    end="\t",
+                )
+                print(loss.item())
                 running_loss = 0.0
         torch.cuda.empty_cache()
         test_pred_list = []
@@ -139,16 +154,16 @@ if __name__ == "__main__":
             device_label = label.to(device)
             bag_class = model(device_patch)
             test_pred_list.append(int(torch.argmax(bag_class).cpu()))
-            test_label_list.append(label.cpu().item())
-        acc, auc, precision, recall, fscore = five_scores(
-            test_label_list, test_pred_list
-        )
+            test_label_list.append(int(label.cpu().item()))
+        acc, sens, spec, ppv, npv, f1 = compute_metrics(test_label_list, test_pred_list)
+        print(acc, sens, spec, ppv, npv, f1)
         if acc > best_acc:
             best_model = model
             best_epoch = epoch
-            best_result = (acc, auc, precision, recall, fscore)
+            best_result = (acc, sens, spec, ppv, npv, f1)
         else:
             pass
+        # print(test_pred_list, test_label_list)
     # save model
     print("The best epoch is:", best_epoch)
     torch.save(best_model.state_dict(), "best.pth")
@@ -164,3 +179,5 @@ if __name__ == "__main__":
 
 # The best epoch is: 9
 # (0.2063106796116505, 0.5, 0.0, 0.0, 0.0)
+
+# bag_size = 10
