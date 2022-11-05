@@ -62,7 +62,7 @@ def compute_metrics(label_list, predicted_label_list):
     precision = tp / (tp + fp)
     recall = tp / (tp + fn)
     f1 = 2 * (precision * recall) / (precision + recall)
-
+    # spec and npv low
     return acc, sens, spec, ppv, npv, f1
 
 
@@ -147,15 +147,15 @@ if __name__ == "__main__":
                 print(loss.item())
                 running_loss = 0.0
         torch.cuda.empty_cache()
-        test_pred_list = []
-        test_label_list = []
+        val_pred_list = []
+        val_label_list = []
         for patch, label in val_bags:
             device_patch = patch.to(device)
             device_label = label.to(device)
             bag_class = model(device_patch)
-            test_pred_list.append(int(torch.argmax(bag_class).cpu()))
-            test_label_list.append(int(label.cpu().item()))
-        acc, sens, spec, ppv, npv, f1 = compute_metrics(test_label_list, test_pred_list)
+            val_pred_list.append(int(torch.argmax(bag_class).cpu()))
+            val_label_list.append(int(label.cpu().item()))
+        acc, sens, spec, ppv, npv, f1 = compute_metrics(val_label_list, val_pred_list)
         print(acc, sens, spec, ppv, npv, f1)
         if acc > best_acc:
             best_model = model
@@ -166,18 +166,25 @@ if __name__ == "__main__":
         # print(test_pred_list, test_label_list)
     # save model
     print("The best epoch is:", best_epoch)
+    print("The best val result is:", best_result)
     torch.save(best_model.state_dict(), "best.pth")
     torch.save(model.state_dict(), "last.pth")
-    print(best_result)
+    test_pred_list = []
+    test_label_list = []
+    for patch, label in test_bags:
+        device_patch = patch.to(device)
+        device_label = label.to(device)
+        bag_class = model(device_patch)
+        test_pred_list.append(int(torch.argmax(bag_class).cpu()))
+        test_label_list.append(int(label.cpu().item()))
+    acc, sens, spec, ppv, npv, f1 = compute_metrics(test_label_list, test_pred_list)
+    print("The test set result is: ", acc, sens, spec, ppv, npv, f1)
 
-
-# accuracy: 0.1754098360655738
-# auc_value: 0.5
-# precision: 0.0
-# recall: 0.0
-# fscore: 0.0
-
-# The best epoch is: 9
-# (0.2063106796116505, 0.5, 0.0, 0.0, 0.0)
-
-# bag_size = 10
+# --test_ratio 0.1
+# --classification_label ER
+# --bag_size 10
+# --train_ratio 0.7
+# --optimizer Adam
+# --epoch 100
+# acc, sens, spec, ppv, npv, f1
+# (0.7589792060491494, 0.9331360946745562, 0.06807511737089202, 0.7988855116514691, 0.20422535211267606, 0.8608078602620087)
