@@ -5,7 +5,6 @@ import numpy as np
 import torch
 from bag_data import Bag_WSI
 from models import MIL
-from sklearn.metrics import precision_recall_fscore_support, roc_auc_score, roc_curve
 import warnings
 
 

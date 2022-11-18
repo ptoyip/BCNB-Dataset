@@ -1,3 +1,5 @@
+# Bag data for TransMIL
+
 from glob import iglob
 
 import torch
@@ -5,75 +7,109 @@ from pandas import read_excel
 from PIL import Image
 from torchvision import transforms
 
+transform = transforms.Compose(
+    [
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        # Same as what the original paper used.
+    ]
+)
 
-class Bag_WSI:
-    # Bag => WSI image cropped shuffled set
-    # Instance => mixed_patches
+
+class Bag_WSI(torch.utils.data.Dataset):
     def __init__(
         self,
-        excel_path=r"patient-clinical-data.xlsx",
-        patches_path=r"patches",
-        classification_label="ER",
-        positive_label="Positive",
-        bag_size=30,  # Median of patches size is 36.5 FYI
-    ) -> None:
-        self.csv_data = read_excel(excel_path)
-        self.patch_folder = sorted(
+        excel_path,
+        patches_path,
+        classification_label,
+        positive_label,
+        bag_size,
+        is_bootstrap=True,
+    ):
+        self.classification_label = classification_label
+        self.positive_label = positive_label
+        self.bag_size = bag_size
+
+        print("load csv")
+        csv_data = read_excel(excel_path)
+        patches_folder = sorted(
             iglob(patches_path + "/*"), key=lambda x: int(x.split("/")[-1])
         )
+
         self.patch_label = list(
             map(
-                lambda x: 1 if x == positive_label else 0,
-                self.csv_data[classification_label],
+                lambda x: 1 if x == self.positive_label else 0,
+                csv_data[self.classification_label],
             )
         )
-        self.bag_size = bag_size
-        print("Initialising")
-        self.__patch_labelling()
-        print("finished generation")
-        self.bag_list = list(
-            [
-                *zip(self.pos_bag_list, torch.ones(len(self.pos_bag_list), 1)),
-                *zip(self.neg_bag_list, torch.zeros(len(self.neg_bag_list), 1)),
-            ]
-        )
-
-    def __patch_labelling(self):
-        unlabeled_img_list = []
+        self.pos_patch_list = []
+        self.neg_patch_list = []
         self.pos_bag_list = []
         self.neg_bag_list = []
-        transform = transforms.Compose(
-            [
-                transforms.Resize((256, 256)),
-                transforms.ToTensor(),
-                # ? Need normalised the image?
-            ]
+        print("load patch")
+        self.load_patch(patches_folder)
+        print("check bootstrap")
+        if is_bootstrap:
+            self.neg_bag_list = self.bootstrap(self.neg_patch_list)
+            self.pos_bag_list = self.bootstrap(self.pos_patch_list)
+        else:
+            pass
+        self.bag_list = []
+        self.bag_list.extend(
+            zip(self.pos_bag_list, torch.ones(len(self.pos_bag_list), 1))
         )
-        for folder in self.patch_folder:
-            patch_img = []
-            file_path = iglob(folder + "/*")
-            for img_path in file_path:
-                patch_img.append(transform(Image.open(img_path)))
-            unlabeled_img_list.append(torch.stack(patch_img, dim=0))
-        for patch_idx, patch in enumerate(unlabeled_img_list):  # patch is tensor
-            # * Check Patch Tensor Length
-            if len(patch) <= self.bag_size:
-                # * Generate a bag directly, can write a function to make it look better
-                if self.patch_label[patch_idx]:
-                    self.pos_bag_list.append(patch)
-                else:
-                    self.neg_bag_list.append(patch)
+        self.bag_list.extend(
+            zip(self.neg_bag_list, torch.zeros(len(self.neg_bag_list), 1))
+        )
+
+    def __len__(self):
+        return len(self.bag_list)
+
+    def __getitem__(self, index):
+        return self.bag_list[index]
+
+    def load_patch(self, patches_folder):
+        for index, folder in enumerate(patches_folder):
+            files = iglob(folder + "/*")
+            image_list = []
+            for file in files:
+                image = transform(Image.open(file))
+                image_list.append(image)
+            patch_tensor = torch.stack(image_list, axis=0)
+            if self.patch_label[index]:
+                self.pos_patch_list.append(patch_tensor)
             else:
-                # * Generate multiple bags with random sampled instances, number of bags depend on the number of instances the patch have.
-                bootstrap_times = len(patch) // self.bag_size + 1
-                for i in range(bootstrap_times):
-                    rand_int = torch.multinomial(
-                        torch.ones(self.bag_size, dtype=torch.float),
-                        self.bag_size,
-                        replacement=True,
+                self.neg_patch_list.append(patch_tensor)
+
+    def bootstrap(self, bag_list):
+        result_patch_list = []
+        count = 0
+        for patch in bag_list:
+            count += 1
+            if len(patch) < self.bag_size:
+                random_num = torch.randperm(self.bag_size - len(patch))
+                random_num = list(
+                    map(
+                        lambda x: x if x < len(patch) else x % len(patch),
+                        random_num.tolist(),
                     )
-                    bag = patch[rand_int]  # 1 * N(img) * 3 * 255 * 255
-                    if self.patch_label[patch_idx]:
-                        self.pos_bag_list.append(bag)
-                    else:
-                        self.neg_bag_list.append(bag)
+                )
+                # print('patch len is',len(patch),'add num is',len(random_num))
+                stack_list = []
+                for idx in random_num:
+                    tmp_image = patch[idx]
+                    stack_list.append(tmp_image)
+                stacked = torch.stack(stack_list, dim=0)
+                patch = torch.cat([patch, stacked], dim=0)
+                result_patch_list.append(patch)
+            else:
+                bootstrap_times = self.bag_size
+                for rep in range(bootstrap_times):
+                    img_list = []
+                    random_num = torch.randperm(len(patch)).tolist()[: self.bag_size]
+                    for idx in random_num:
+                        img_list.append(patch[idx])
+                    patch_tensor = torch.stack(img_list, dim=0)
+                    result_patch_list.append(patch_tensor)
+        return result_patch_list
